@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>나무위키 RAG 검색</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --panel: #fff; --ink: #1c1b19; --muted: #6b6862;
+    --line: #e5e1da; --accent: #00a495; --accent-ink: #00776c;
+    --mark: #fff3c4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171614; --panel: #1f1e1b; --ink: #eceae6; --muted: #a09c94;
+      --line: #33312d; --accent: #2fd0bf; --accent-ink: #7ee5da;
+      --mark: #4a4223;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  }
+  header {
+    border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 0 20px; }
+  .brand { display: flex; align-items: baseline; gap: 10px; padding: 18px 0 14px; }
+  .brand h1 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
+  .brand span { color: var(--muted); font-size: 12.5px; }
+  form { display: flex; gap: 8px; padding-bottom: 16px; }
+  input[type=search] {
+    flex: 1; padding: 11px 14px; font-size: 15px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  }
+  input[type=search]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  button {
+    padding: 11px 20px; font-size: 15px; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #04211e; border: 0; border-radius: 8px;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  main { padding: 22px 0 60px; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .hit {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 15px 17px; margin-bottom: 12px;
+  }
+  .hit-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .hit-head a { color: var(--accent-ink); font-weight: 650; text-decoration: none; font-size: 15.5px; }
+  .hit-head a:hover { text-decoration: underline; }
+  .path { color: var(--muted); font-size: 12.5px; }
+  .score { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .body { margin-top: 9px; white-space: pre-wrap; font-size: 14.2px; }
+  .stamp { margin-top: 9px; color: var(--muted); font-size: 12px; }
+  .empty, .err { color: var(--muted); padding: 30px 0; text-align: center; }
+  .err { color: #d05a4a; }
+  footer {
+    border-top: 1px solid var(--line); padding: 16px 0 40px;
+    color: var(--muted); font-size: 12.5px;
+  }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; }
+  .stats b { color: var(--ink); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <h1>나무위키 RAG 검색</h1>
+      <span>하이브리드 검색 · 리랭킹</span>
+    </div>
+    <form id="f">
+      <input id="q" type="search" placeholder="예: 김연아가 밴쿠버 올림픽에서 받은 점수는?" autofocus>
+      <button id="go" type="submit">검색</button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="meta" class="meta"></div>
+  <div id="out"></div>
+</main>
+
+<footer class="wrap">
+  <div>출처: 나무위키 · <a href="https://creativecommons.org/licenses/by-nc-sa/2.0/kr/" style="color:var(--accent-ink)">CC BY-NC-SA 2.0 KR</a>. 비영리 연구 목적.</div>
+  <div class="stats" id="stats"></div>
+</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const s = await r.json();
+    $('#stats').innerHTML =
+      `<span>문서 <b>${s.documents.toLocaleString()}</b></span>` +
+      `<span>청크 <b>${s.chunks.toLocaleString()}</b></span>` +
+      `<span>색인됨 <b>${(s.qdrant_points ?? 0).toLocaleString()}</b></span>` +
+      `<span>수집 대상 <b>${s.frontier_total.toLocaleString()}</b></span>`;
+  } catch (e) { /* 통계는 없어도 검색은 된다 */ }
+}
+
+$('#f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('#q').value.trim();
+  if (!q) return;
+  $('#go').disabled = true;
+  $('#meta').textContent = '검색 중…';
+  $('#out').innerHTML = '';
+  try {
+    const r = await fetch('/api/search?k=8&q=' + encodeURIComponent(q));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    $('#meta').textContent = `${d.hits.length}건 · ${d.took_ms}ms`;
+    if (!d.hits.length) {
+      $('#out').innerHTML = '<div class="empty">결과가 없습니다. 아직 색인되지 않은 범위일 수 있습니다.</div>';
+      return;
+    }
+    $('#out').innerHTML = d.hits.map(h => {
+      const path = h.heading_path.length ? ' › ' + h.heading_path.map(esc).join(' › ') : '';
+      const stamp = [
+        h.last_modified ? '문서 수정: ' + h.last_modified.slice(0,10) : null,
+        h.fetched_at ? '수집: ' + h.fetched_at.slice(0,10) : null
+      ].filter(Boolean).join(' · ');
+      return `<article class="hit">
+        <div class="hit-head">
+          <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+          <span class="path">${path}</span>
+          <span class="score">${h.score.toFixed(3)}</span>
+        </div>
+        <div class="body">${esc(h.text)}</div>
+        ${stamp ? `<div class="stamp">${stamp}</div>` : ''}
+      </article>`;
+    }).join('');
+  } catch (err) {
+    $('#out').innerHTML = `<div class="err">검색 실패: ${esc(String(err))}</div>`;
+    $('#meta').textContent = '';
+  } finally {
+    $('#go').disabled = false;
+    loadStats();
+  }
+});
+
+loadStats();
+</script>
+</body>
+</html>

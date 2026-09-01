@@ -1,0 +1,22 @@
+# Python 3.14 환경이라 cp314 휠이 있는 최신 버전을 쓴다.
+# 정확한 핀 대신 하한을 둔다 — 3.14 휠이 없는 구버전으로 내려가면 설치가 깨진다.
+
+# 인프라 클라이언트
+psycopg[binary]>=3.2.10
+# kafka-python은 Python 3.14 selectors와 호환되지 않는다 (Invalid file descriptor: -1).
+confluent-kafka>=2.15.0
+qdrant-client>=1.15.1
+
+# 수집
+httpx[http2]>=0.28.1
+
+# 모델 (torch CUDA 빌드는 별도 인덱스 — README 참고)
+sentence-transformers>=5.1.0
+transformers>=4.57.0
+
+# API
+fastapi>=0.120.0
+uvicorn[standard]>=0.38.0
+
+# 덤프 로딩
+pyarrow>=21.0.0

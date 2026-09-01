@@ -1,0 +1,605 @@
+<title>나무위키 RAG 실측 기록</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --ground:  #F4F6F5;
+    --surface: #FFFFFF;
+    --sunk:    #ECEFEE;
+    --ink:     #14201F;
+    --ink-2:   #33413E;
+    --muted:   #5A6B6E;
+    --line:    #DDE3E1;
+    --line-2:  #C6D0CD;
+    --accent:  #0B5D6E;
+    --accent-soft: #E2EFF1;
+    --pass:    #3E7A3C;
+    --warn:    #9C6B14;
+    --fail:    #A8352A;
+    --shadow:  0 1px 2px rgba(20,32,31,.06), 0 8px 24px -16px rgba(20,32,31,.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:  #0F1618;
+      --surface: #161F22;
+      --sunk:    #121A1D;
+      --ink:     #E7EDEB;
+      --ink-2:   #C2CDCA;
+      --muted:   #8C9C9E;
+      --line:    #26333A;
+      --line-2:  #33444C;
+      --accent:  #58C4D6;
+      --accent-soft: #12333B;
+      --pass:    #74C065;
+      --warn:    #D6A648;
+      --fail:    #E2796A;
+      --shadow:  0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:  #0F1618;
+    --surface: #161F22;
+    --sunk:    #121A1D;
+    --ink:     #E7EDEB;
+    --ink-2:   #C2CDCA;
+    --muted:   #8C9C9E;
+    --line:    #26333A;
+    --line-2:  #33444C;
+    --accent:  #58C4D6;
+    --accent-soft: #12333B;
+    --pass:    #74C065;
+    --warn:    #D6A648;
+    --fail:    #E2796A;
+    --shadow:  0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans KR", -apple-system, "Malgun Gothic", sans-serif;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1120px; margin: 0 auto; padding: 0 28px 96px; }
+  .col  { max-width: 660px; }
+  code, .mono, td.num, .metric b { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .num, .metric b, table td:not(.t) { font-variant-numeric: tabular-nums; }
+
+  /* ---- header ---- */
+  header { padding: 68px 0 34px; border-bottom: 1px solid var(--line); }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; font-weight: 500;
+    letter-spacing: .13em; text-transform: uppercase; color: var(--accent);
+    display: flex; gap: 12px; align-items: center;
+  }
+  .eyebrow::after { content: ""; height: 1px; flex: 1; background: var(--line-2); }
+  h1 {
+    font-size: clamp(32px, 5.2vw, 50px); line-height: 1.1; letter-spacing: -.028em;
+    font-weight: 700; margin: 18px 0 14px; text-wrap: balance;
+  }
+  .lede { font-size: 18px; color: var(--ink-2); max-width: 660px; margin: 0; font-weight: 300; }
+  .stamp {
+    margin-top: 22px; font-family: "IBM Plex Mono", monospace; font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  /* ---- metric band ---- */
+  .band {
+    display: grid; gap: 1px; background: var(--line);
+    grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    margin: 34px 0 8px; box-shadow: var(--shadow);
+  }
+  .metric { background: var(--surface); padding: 16px 18px; }
+  .metric span {
+    display: block; font-size: 11.5px; letter-spacing: .05em; color: var(--muted);
+    text-transform: uppercase; font-family: "IBM Plex Mono", monospace;
+  }
+  .metric b { display: block; font-size: 25px; font-weight: 600; letter-spacing: -.02em; margin-top: 5px; }
+  .metric i { font-style: normal; font-size: 12.5px; color: var(--muted); }
+  .caption { font-size: 12.5px; color: var(--muted); margin: 10px 0 0; }
+
+  /* ---- sections ---- */
+  section { margin-top: 62px; }
+  h2 {
+    font-size: 13px; font-family: "IBM Plex Mono", monospace; font-weight: 600;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+    margin: 0 0 6px; display: flex; align-items: baseline; gap: 12px;
+  }
+  h2 .n { color: var(--muted); font-weight: 400; }
+  h3 { font-size: 25px; letter-spacing: -.022em; margin: 0 0 16px; font-weight: 600; text-wrap: balance; }
+  h4 { font-size: 16.5px; margin: 30px 0 10px; font-weight: 600; }
+  p { margin: 0 0 15px; }
+  .col p, .col ul { max-width: 660px; }
+  ul { padding-left: 20px; margin: 0 0 15px; }
+  li { margin-bottom: 7px; }
+  strong { font-weight: 600; }
+  a { color: var(--accent); }
+
+  /* ---- tables ---- */
+  .scroll { overflow-x: auto; margin: 20px 0 8px; border: 1px solid var(--line);
+            border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th {
+    text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
+    letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+    font-weight: 500; padding: 12px 16px; border-bottom: 1px solid var(--line-2);
+    white-space: nowrap; background: var(--sunk);
+  }
+  td { padding: 11px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.r, th.r { text-align: right; }
+  td.t { min-width: 150px; }
+
+  /* ---- assumption flip ---- */
+  .flip {
+    display: grid; grid-template-columns: 1fr auto 1fr; gap: 0;
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    margin-bottom: 14px; background: var(--surface); box-shadow: var(--shadow);
+  }
+  .flip > div { padding: 15px 18px; }
+  .flip .was { background: var(--sunk); color: var(--muted); }
+  .flip .arrow {
+    display: flex; align-items: center; padding: 0 14px; color: var(--accent);
+    font-family: "IBM Plex Mono", monospace; font-size: 17px;
+    border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+    background: var(--sunk);
+  }
+  .flip .lbl {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .1em;
+    text-transform: uppercase; display: block; margin-bottom: 5px; opacity: .75;
+  }
+  .flip .now .lbl { color: var(--accent); opacity: 1; }
+  @media (max-width: 680px) {
+    .flip { grid-template-columns: 1fr; }
+    .flip .arrow { border: 0; border-top: 1px solid var(--line);
+                   border-bottom: 1px solid var(--line); padding: 6px 18px; }
+  }
+
+  /* ---- status pills ---- */
+  .pill {
+    display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    font-weight: 600; letter-spacing: .05em; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid currentColor; white-space: nowrap;
+  }
+  .p-done { color: var(--pass); }
+  .p-part { color: var(--warn); }
+  .p-todo { color: var(--muted); }
+
+  /* ---- pipeline diagram ---- */
+  .pipe {
+    display: flex; flex-wrap: wrap; align-items: stretch; gap: 0;
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    background: var(--surface); margin: 22px 0 8px; box-shadow: var(--shadow);
+  }
+  .stage { flex: 1 1 130px; padding: 15px 16px; border-right: 1px solid var(--line); }
+  .stage:last-child { border-right: 0; }
+  .stage .s-name { font-weight: 600; font-size: 14.5px; }
+  .stage .s-topic {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--accent);
+    display: block; margin-top: 3px;
+  }
+  .stage .s-note { font-size: 12.5px; color: var(--muted); margin-top: 7px; display: block; }
+
+  blockquote {
+    margin: 20px 0; padding: 14px 20px; border-left: 3px solid var(--accent);
+    background: var(--accent-soft); border-radius: 0 8px 8px 0; font-size: 15px;
+  }
+  blockquote p:last-child { margin-bottom: 0; }
+  footer {
+    margin-top: 76px; padding-top: 26px; border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--muted);
+  }
+</style>
+
+<div class="page">
+
+<header>
+  <div class="eyebrow">Build Report · 2026-08-31</div>
+  <h1>나무위키 RAG 실측 기록</h1>
+  <p class="lede">
+    나무위키 전체를 분산 수집해 검색하는 시스템. 이 문서의 모든 수치는 추정이 아니라
+    직접 측정한 값이고, 그 측정이 초기 설계 가정을 여러 개 뒤집었다.
+  </p>
+  <div class="stamp">단일 노트북 · i7-13700H / RAM 32GB / RTX 4050 6GB(30W)</div>
+</header>
+
+<div class="band">
+  <div class="metric"><span>실질 문서</span><b>1,240,000</b><i>리다이렉트 34.4% 제외</i></div>
+  <div class="metric"><span>일일 편집</span><b>33,600</b><i>고유 문서 / 일</i></div>
+  <div class="metric"><span>예상 청크</span><b>9,000,000</b><i>850자 기준</i></div>
+  <div class="metric"><span>전수 크롤</span><b>70h</b><i>동시 4 · 실측 4.9문서/s</i></div>
+  <div class="metric"><span>인프라 비용</span><b>0원</b><i>전기 제외</i></div>
+</div>
+<p class="caption">
+  나무위키 자체 통계 페이지, <code>sidebar.json</code> 3분 폴링, 무작위 문서 표본 실측 기준.
+</p>
+
+<section class="col">
+  <h2><span class="n">01</span> 조사</h2>
+  <h3>먼저 알아야 했던 것</h3>
+  <p>
+    설계보다 조사가 먼저였다. 나무위키의 <strong>공식 DB 덤프는 2021년 3월이 마지막</strong>이고
+    5년째 갱신이 없다. 커뮤니티 덤프도 2022년이 최신이라, 현재 실질 문서의
+    <strong>46%밖에 덮지 못한다.</strong> "최신까지 전부"를 원한다면 크롤링이 필수다.
+  </p>
+  <p>
+    그런데 <code>robots.txt</code>를 실제로 열어보니 예상과 달랐다. 문서 본문 경로
+    <code>/w/</code>가 <strong>허용</strong>되어 있었고, Cloudflare 챌린지 없이 정상 응답했다.
+    다만 나무위키 측은 "크롤링은 서버 부담이니 덤프를 받으라"고 안내한다 — 허용은
+    됐지만 환영받는 건 아니라서, 보호 장치를 정책이 아니라 코드로 강제했다.
+  </p>
+  <blockquote>
+    <p>
+      가장 중요한 발견은 <code>/sidebar.json</code>이었다. robots.txt가 명시적으로 허용한
+      엔드포인트인데 최근 변경을 JSON으로 준다. 항목 15개가 <strong>약 32초</strong>를 덮는
+      슬라이딩 윈도우라, 폴링 주기가 30초를 넘으면 그 사이 편집이 영구 유실된다.
+      이 한 줄이 신선도 설계 전체를 결정했다.
+    </p>
+  </blockquote>
+</section>
+
+<section>
+  <h2><span class="n">02</span> 정정</h2>
+  <h3 class="col">실측이 뒤집은 가정</h3>
+  <p class="col">
+    이 프로젝트의 실제 내용은 "가정이 측정에 계속 깨진 기록"이다. 아래가 그 목록이다.
+  </p>
+
+  <div class="flip">
+    <div class="was"><span class="lbl">가정</span>문서 100만 개</div>
+    <div class="arrow">→</div>
+    <div class="now"><span class="lbl">실측</span><strong>1,894,043개</strong> (리다이렉트 포함) / 실질 124만. 나무위키 통계 페이지 직접 확인</div>
+  </div>
+
+  <div class="flip">
+    <div class="was"><span class="lbl">가정</span>문서당 HTML 1.2MB, 전수 크롤 트래픽 수백 GB</div>
+    <div class="arrow">→</div>
+    <div class="now"><span class="lbl">실측</span>평균 <strong>232KB</strong>, 중앙값 110KB. 초기 표본이 유명 문서 편향이었다 — 실제로는 <strong>상위 1~3%</strong>만 재고 있었다</div>
+  </div>
+
+  <div class="flip">
+    <div class="was"><span class="lbl">가정</span>문서 텍스트는 평균 수만 자</div>
+    <div class="arrow">→</div>
+    <div class="now"><span class="lbl">실측</span>중앙값 <strong>2,056자</strong>, 평균 5,501자. 평균이 중앙값의 2.7배인 극단적 롱테일</div>
+  </div>
+
+  <div class="flip">
+    <div class="was"><span class="lbl">가정</span>BGE-M3 한 모델로 dense+sparse를 다 해결</div>
+    <div class="arrow">→</div>
+    <div class="now"><span class="lbl">실측</span>BGE-M3 dense는 0.5B 그룹 <strong>최하위권</strong>(0.7483). 그리고 KURE-v1엔 sparse 헤드가 아예 없다. dense·sparse·리랭커를 <strong>따로</strong> 쓰는 게 맞았다</div>
+  </div>
+
+  <div class="flip">
+    <div class="was"><span class="lbl">가정</span>리랭커는 없어도 된다</div>
+    <div class="arrow">→</div>
+    <div class="now"><span class="lbl">실측</span>리랭킹이 NDCG@10을 <strong>+3.5%p</strong> 올린다. 색인 비용이 0이라 비용 대비 효과가 가장 크다</div>
+  </div>
+
+  <div class="flip">
+    <div class="was"><span class="lbl">가정</span>덤프를 콘텐츠 소스로 쓴다</div>
+    <div class="arrow">→</div>
+    <div class="now"><span class="lbl">실측</span>덤프 텍스트엔 <strong>헤딩 구조가 없다.</strong> 내비게이션 텍스트도 본문에 섞여 있다. 덤프는 <strong>제목 시드</strong>로만 쓰고 콘텐츠는 크롤이 담당하게 바꿨다</div>
+  </div>
+
+  <div class="flip">
+    <div class="was"><span class="lbl">가정</span>전체 임베딩에 30~60시간</div>
+    <div class="arrow">→</div>
+    <div class="now"><span class="lbl">실측</span><strong>107~142시간</strong>(4.5~6일). 심지어 이 값도 GPU를 다른 훈련 작업과 공유한 상태의 하한선이다</div>
+  </div>
+
+  <div class="flip">
+    <div class="was"><span class="lbl">가정</span>크롤러가 리다이렉트를 따라가면 그만이다</div>
+    <div class="arrow">→</div>
+    <div class="now"><span class="lbl">실측</span>문서의 <strong>5.2%(255개)</strong>가 정식 내용을 <strong>별칭 제목으로</strong> 저장하고 있었다. 같은 내용을 두 번 임베딩하고 그래프 노드도 갈라진다. 추출 카나리아가 아니었으면 못 찾았을 문제 — 오류가 나지 않고 조용히 중복만 쌓인다</div>
+  </div>
+
+  <div class="flip">
+    <div class="was"><span class="lbl">가정</span>MinIO로 원본 HTML 보관</div>
+    <div class="arrow">→</div>
+    <div class="now"><span class="lbl">실측</span>MinIO 커뮤니티 저장소가 <strong>2026-02 아카이브</strong>됐다. 단일 노드에선 파일시스템이 낫고, 다중 노드 확장 시 SeaweedFS로 간다</div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">03</span> 구조</h2>
+  <h3 class="col">만든 것</h3>
+  <p class="col">
+    각 단계는 Kafka 토픽으로만 통신하고 서로를 직접 호출하지 않는다. 문서 본문은
+    최대 16만 자라 메시지에 넣을 수 없으므로, 본문은 블롭 저장소에 두고 Kafka에는
+    참조만 흘린다(클레임 체크). 이 설계가 <strong>재크롤 없는 재파싱</strong>과
+    <strong>재파싱 없는 재임베딩</strong>을 가능하게 한다.
+  </p>
+
+  <div class="pipe">
+    <div class="stage">
+      <span class="s-name">frontier</span>
+      <span class="s-topic">→ crawl.requests</span>
+      <span class="s-note">sidebar.json 10초 폴링 · 재방문 스케줄</span>
+    </div>
+    <div class="stage">
+      <span class="s-name">crawler</span>
+      <span class="s-topic">→ docs.raw</span>
+      <span class="s-note">동시 4 · 서킷 브레이커 · 링크 BFS</span>
+    </div>
+    <div class="stage">
+      <span class="s-name">parser</span>
+      <span class="s-topic">→ chunks.ready</span>
+      <span class="s-note">앵커 기반 추출 · 수율 카나리아</span>
+    </div>
+    <div class="stage">
+      <span class="s-name">embedder</span>
+      <span class="s-topic">→ Qdrant</span>
+      <span class="s-note">dense + sparse · 유일한 진짜 병목</span>
+    </div>
+    <div class="stage">
+      <span class="s-name">api</span>
+      <span class="s-topic">RRF + rerank</span>
+      <span class="s-note">하이브리드 검색 · 그래프 확장</span>
+    </div>
+  </div>
+  <p class="caption">
+    <code>docs.raw</code>와 <code>chunks.ready</code>는 compact 정책으로 영구 보존한다.
+    파서를 고치면 <code>docs.raw</code>를, 임베딩 모델을 바꾸면 <code>chunks.ready</code>를
+    오프셋 0부터 재생하면 된다.
+  </p>
+
+  <h4>분산이 실제로 의미 있는 구간</h4>
+  <p class="col">
+    정직하게 말하면 네 단계 중 하나만 진짜 분산 문제다. 크롤은 상대 서버를 배려해야 해서
+    노드를 늘리면 <em>안 되고</em>, 파싱은 14코어로 충분하다. 오직 임베딩과 벡터 인덱스만
+    노드를 추가할수록 선형으로 빨라진다. 크롤러를 컨슈머 그룹으로 만든 건 성능이 아니라
+    장애 격리 때문이다.
+  </p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th class="t">단계</th><th>병목</th><th>노드 추가 효과</th></tr></thead>
+      <tbody>
+        <tr><td class="t">크롤</td><td>네트워크 대기 + 상대 서버 배려</td><td style="color:var(--fail)">없음 — 늘리면 안 됨</td></tr>
+        <tr><td class="t">파싱</td><td>CPU</td><td style="color:var(--warn)">미미 — 단일 노드로 충분</td></tr>
+        <tr><td class="t"><strong>임베딩</strong></td><td>GPU</td><td style="color:var(--pass)"><strong>선형 — 진짜 분산 문제</strong></td></tr>
+        <tr><td class="t">벡터 검색</td><td>메모리</td><td style="color:var(--pass)">샤딩 필요</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">04</span> 함정</h2>
+  <h3 class="col">구현 중 실제로 터진 것</h3>
+  <p class="col">
+    전부 조용히 실패하는 종류였다. 로그에 아무것도 안 남거나, 남더라도 원인과 무관한
+    증상만 보였다.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th class="t">증상</th><th>진짜 원인</th><th>대응</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="t">컨슈머 그룹이 0건만 반환</td>
+          <td><code>kafka-python</code>이 Python 3.14의 selectors와 비호환. 그룹 없는 소비는 되고 그룹 소비만 실패</td>
+          <td>confluent-kafka로 교체</td>
+        </tr>
+        <tr>
+          <td class="t">저장된 파일이 HTML이 아님</td>
+          <td><code>Accept-Encoding</code>에 <code>br</code>을 직접 넣었는데 brotli 디코더가 없어 압축 바이너리가 그대로 저장</td>
+          <td>헤더를 직접 지정하지 않음 + HTML 검증 가드</td>
+        </tr>
+        <tr>
+          <td class="t">머신 전체가 느려짐</td>
+          <td>SPLADE 로짓 <code>(16 × 512 × 250,002)</code> 텐서를 <strong>세 벌</strong> 만들어 RAM 8.7GB 점유</td>
+          <td>단조성을 이용해 풀링 후 변환 → 한 벌로. 배치도 축소</td>
+        </tr>
+        <tr>
+          <td class="t">문서 15건 색인 실패</td>
+          <td>추출 텍스트의 NUL(0x00) — PostgreSQL text가 거부</td>
+          <td>추출 단계에서 제어문자 제거</td>
+        </tr>
+        <tr>
+          <td class="t">크롤 요청 전부 실패</td>
+          <td>User-Agent에 한글 — HTTP 헤더는 ASCII만 허용</td>
+          <td>UA를 ASCII로</td>
+        </tr>
+        <tr>
+          <td class="t">두 번째 배치부터 크래시</td>
+          <td><code>asyncio.Lock</code>이 <code>asyncio.run()</code>마다 새로 생기는 루프에 묶임</td>
+          <td>락 없는 슬롯 예약 방식</td>
+        </tr>
+        <tr>
+          <td class="t">카나리아가 영영 재검증 안 됨</td>
+          <td>문서가 안 바뀌면 "변경 없음" 단축 경로를 타서 검사 자체가 실행되지 않음</td>
+          <td>카나리아 문서는 단축 경로 예외</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>추출기는 언젠가 조용히 깨진다</h4>
+  <p class="col">
+    나무위키의 CSS 클래스명은 빌드 해시(<code>_0MSSsdmG</code>)라 배포마다 바뀐다.
+    그래서 셀렉터를 일절 쓰지 않고 <strong>의미론적 앵커</strong>만 쓴다 —
+    <code>id="s-4.1"</code> 형태의 섹션 앵커(점 표기가 곧 헤딩 계층),
+    <code>&lt;details&gt;&lt;summary&gt;</code> 네비게이션 틀, 라이선스 고지문.
+    이 앵커들은 외부 링크와 법적 의무 때문에 함부로 바뀌지 않는다.
+  </p>
+  <p class="col">
+    그럼에도 언젠가 깨지므로, 기준 문서 5개의 추출 길이를 감시해 ±30% 이탈 시 경보하고
+    파서를 정지시킨다. 이게 없으면 빈 문자열로 900만 청크를 오염시켜도 알아채지 못한다.
+  </p>
+</section>
+
+<section>
+  <h2><span class="n">05</span> 신선도</h2>
+  <h3 class="col">하루 33,600개가 바뀐다</h3>
+  <p class="col">
+    코퍼스의 2.7%가 매일 갱신된다. 3층으로 대응한다.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th class="t">층</th><th>방식</th><th class="r">지연</th><th>역할</th></tr></thead>
+      <tbody>
+        <tr><td class="t">1. 실시간</td><td><code>sidebar.json</code> 10초 폴링</td><td class="r">초</td><td>편집 즉시 큐잉</td></tr>
+        <tr><td class="t">2. 재방문</td><td><code>next_due_at</code> 14일</td><td class="r">최대 14일</td><td>1층이 놓친 것 회수</td></tr>
+        <tr><td class="t">3. 차단</td><td><code>content_hash</code> 비교</td><td class="r">—</td><td>불필요한 재임베딩 제거</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="col">
+    3층이 비용을 좌우한다. 이게 없으면 14일 주기 재방문마다 코퍼스 전체를 재임베딩하게 된다.
+    삭제·이동된 문서는 404를 만나면 tombstone을 흘려 Postgres와 Qdrant에서 제거한다.
+  </p>
+  <blockquote>
+    <p>
+      전수 크롤에 70시간이 걸리는 동안에도 약 10만 문서가 바뀐다. <strong>일관된 스냅샷은
+      원리적으로 불가능하다.</strong> 그래서 감추는 대신 드러낸다 — 검색 결과마다 문서의
+      최근 수정 시각과 수집 시각을 함께 표시한다.
+    </p>
+  </blockquote>
+</section>
+
+<section>
+  <h2><span class="n">06</span> 지식그래프</h2>
+  <h3 class="col">이미 절반은 쌓이고 있었다</h3>
+  <p class="col">
+    나무위키는 링크와 분류 덕분에 그 자체로 지식그래프다. DBpedia가 위키백과로 한 것과
+    같은 구조다. 재료는 수집 과정에서 이미 나오고 있었고, 저장만 안 하고 있었다.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th class="t">단계</th><th>내용</th><th>상태</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="t">KG-1</td>
+          <td>문서 그래프 — 링크·분류·이웃 확장 검색·PageRank</td>
+          <td><span class="pill p-done">완료</span></td>
+        </tr>
+        <tr>
+          <td class="t">KG-2</td>
+          <td>엔티티·관계 추출 — 청크에서 트리플 추출. 전량은 수백 시간이라 PageRank 상위 5만 문서부터</td>
+          <td><span class="pill p-todo">예정</span></td>
+        </tr>
+        <tr>
+          <td class="t">KG-3</td>
+          <td>커뮤니티 요약 — 그래프 클러스터링 + 계층 요약으로 전역 질의 대응</td>
+          <td><span class="pill p-todo">예정</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="col">
+    엣지는 최종적으로 약 10억 개가 예상된다. 별도 엣지 테이블은 sha1 40자 × 2 × 10억 =
+    80GB로 과해서, <code>TEXT[]</code> 배열 + GIN 인덱스로 뒀다. TOAST 압축이 먹고
+    역링크 질의도 된다.
+  </p>
+  <blockquote>
+    <p>
+      KG-3의 함정을 미리 못 박아둔다: 하루 33,600개가 바뀌는 코퍼스에서 커뮤니티 요약을
+      매번 전부 다시 만들 수는 없다. <strong>변경된 커뮤니티만 무효화하는 증분 갱신</strong>을
+      처음부터 설계에 넣지 않으면 KG-3은 유지 불가능해진다.
+    </p>
+  </blockquote>
+</section>
+
+<section>
+  <h2><span class="n">07</span> 검증</h2>
+  <h3 class="col">색인이 채워지자 달라진 것</h3>
+  <p class="col">
+    색인이 18%였을 때와 100%일 때 같은 질의를 돌린 결과다. 리랭커 점수가
+    <strong>답이 있는지 없는지를 정확히 반영</strong>한다 — 색인에 답이 없으면
+    0.15~0.19로 떨어지고, 있으면 0.96~1.00으로 올라간다.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th class="t">질의</th><th>색인 18%</th><th>색인 100%</th></tr></thead>
+      <tbody>
+        <tr><td class="t">파이썬은 어떤 언어인가</td>
+            <td style="color:var(--fail)">0.192 — 과학고등학교 › 교과목</td>
+            <td style="color:var(--pass)"><strong>0.998</strong> — Python › 개요</td></tr>
+        <tr><td class="t">축구 경기 규칙</td>
+            <td style="color:var(--fail)">0.150 — 대한민국/스포츠 › K리그</td>
+            <td style="color:var(--pass)"><strong>0.965</strong> — 축구 › 규칙</td></tr>
+        <tr><td class="t">부산의 지리적 특징</td>
+            <td style="color:var(--warn)">0.371 — 중구(부산) › 지역 특징</td>
+            <td style="color:var(--pass)"><strong>0.998</strong> — 부산광역시 › 지리 &gt; 도시구조 &gt; 특징</td></tr>
+        <tr><td class="t">김연아 올림픽 메달</td>
+            <td style="color:var(--pass)">0.998</td>
+            <td style="color:var(--pass)"><strong>0.998</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">
+    부산 질의의 헤딩 경로가 <code>지리 &gt; 도시구조 &gt; 특징</code>으로 정확히 짚혔다 —
+    청크 앞에 헤딩 경로를 접두로 붙인 설계(§5.1)가 값을 한 지점이다.
+    <code>파이썬</code>으로 물어도 <code>Python</code> 문서가 나오는 것은 리다이렉트 접기 덕이다.
+  </p>
+
+  <h4>남은 품질 문제</h4>
+  <p class="col">
+    <code>축구 경기 규칙</code> 1위 결과에 네비게이션 박스가 새어 들어왔다 —
+    영국군 부대 목록("전략사령부 · 근위대 · 제22SAS연대…")이 본문으로 잡혔다.
+    추출기는 <code>&lt;details&gt;&lt;summary&gt;펼치기·접기&lt;/summary&gt;</code> 형태의
+    네비박스를 제거하는데, <strong>그 형태가 아닌 네비박스</strong>가 남는다.
+    점수는 0.965로 높게 나오지만 내용은 질의와 무관하다.
+  </p>
+</section>
+
+<section>
+  <h2><span class="n">08</span> 현황</h2>
+  <h3 class="col">지금 상태</h3>
+  <div class="band" style="margin-top:0">
+    <div class="metric"><span>수집 문서</span><b>5,246</b><i>파싱 5,069건</i></div>
+    <div class="metric"><span>그래프 엣지</span><b>1,921,207</b><i>문서당 379개</i></div>
+    <div class="metric"><span>색인 청크</span><b>149,900</b><i>임베딩 완료</i></div>
+    <div class="metric"><span>프런티어</span><b>371,706</b><i>BFS 발견 대기</i></div>
+  </div>
+  <p class="caption">
+    시드 30개에서 출발해 링크 BFS로 확장한 결과. 프런티어가 수집 문서의 <strong>71배</strong>로
+    불어난 것이 BFS가 작동한다는 증거다 — 전수 수집으로 가는 경로가 열려 있다.
+  </p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th class="t">구간</th><th>상태</th><th>근거</th></tr></thead>
+      <tbody>
+        <tr><td class="t">인프라</td><td><span class="pill p-done">작동</span></td><td>Kafka(KRaft) · Postgres 17 · Qdrant 1.19 — 3개 healthy</td></tr>
+        <tr><td class="t">수집</td><td><span class="pill p-done">작동</span></td><td>실측 4.9문서/s · 서킷 브레이커 · robots 준수</td></tr>
+        <tr><td class="t">파싱·청킹</td><td><span class="pill p-done">작동</span></td><td>5,069건 파싱 · 청크 중복 0 · 고아 0 · 청크없는문서 0</td></tr>
+        <tr><td class="t">지식그래프 KG-1</td><td><span class="pill p-done">작동</span></td><td>엣지 192만 · 리다이렉트 255개 접기 · PageRank 상위가 국가·도시로 수렴</td></tr>
+        <tr><td class="t">검색 API</td><td><span class="pill p-done">작동</span></td><td>하이브리드 + 리랭킹 + 그래프 확장 + PageRank 동점 보정</td></tr>
+        <tr><td class="t">수율 카나리아</td><td><span class="pill p-done">작동</span></td><td>기준선 5/5 확립 · 경보 0</td></tr>
+        <tr><td class="t">임베딩</td><td><span class="pill p-done">완료</span></td><td>149,900청크 · 12~17청크/s · DB↔Qdrant 정확히 일치</td></tr>
+        <tr><td class="t">검색 품질</td><td><span class="pill p-done">검증</span></td><td>파이썬 0.998 · 부산 0.998 · 김연아 0.998 · 축구 0.965</td></tr>
+        <tr><td class="t">전수 수집</td><td><span class="pill p-todo">미착수</span></td><td>70시간 연속 가동 필요 — 사용자 결정 사항</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">
+    파이프라인 자동 검증 <strong>14개 항목 전부 통과 — 경고 0, 실패 0.</strong> DB의 임베딩 완료 수와 Qdrant 포인트 수가 정확히 일치한다(149,900).
+    DB의 임베딩 완료 수와 Qdrant 포인트 수가 정확히 일치한다 — 색인 유실이 없다는 뜻이다.
+  </p>
+
+  <h4>남은 판단</h4>
+  <ul class="col">
+    <li><strong>GPU 유휴 상태에서 임베딩 재측정.</strong> 현재 수치는 경합 상태 하한선이다.</li>
+    <li><strong>모델 품질 자체 검증.</strong> 공개 벤치마크는 특정 벤더 모델이 전 부문 1위인데
+        벤치마크 저장소와 그 벤더의 관계가 분리 검증되지 않는다. 처리량은 자체 측정으로
+        PIXIE-Rune-Preview가 KURE-v1보다 32% 빠른 것을 확인했지만, 품질은 나무위키
+        질의로 직접 재야 한다.</li>
+    <li><strong>전수 크롤 개시 여부.</strong> 70시간 연속 가동과 수백 GB 트래픽이 든다.</li>
+  </ul>
+</section>
+
+<footer>
+  나무위키 본문은 CC BY-NC-SA 2.0 KR — 출처 표시 · <strong>비영리</strong> · 동일조건변경허락.
+  이 시스템은 비영리 연구용이며 검색 결과에 항상 원문 링크와 라이선스 고지를 포함한다.
+  사용한 모델·소프트웨어는 전부 MIT 또는 Apache 2.0이다.
+</footer>
+
+</div>

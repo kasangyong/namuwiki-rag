@@ -1,0 +1,28 @@
+# 가상환경
+.venv/
+bench_venv/
+
+# 수집 데이터 — 원본 HTML 블롭, 로그, 벤치마크 결과
+# blobs 는 전수 수집 시 45~91 GiB 가 된다. 절대 커밋하지 않는다.
+data/
+
+# 파이썬
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 패치 작업 중 생긴 백업
+*.bak
+
+# 에디터·OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 환경별 설정 (있다면)
+.env
+.env.*
+!.env.example

@@ -271,12 +271,25 @@ curl "http://localhost:8000/api/search?q=김연아+올림픽+메달&k=5"
 | 별칭 (`SAME_AS`) | `redirects` | 255 |
 | 중심성 | `documents.pagerank` | — |
 
+![지식그래프 화면](docs/images/graph-ui.png)
+
+*`대한민국`을 중심으로 한 부분 그래프. 원 크기는 PageRank, 청록은 상호 링크(서로
+가리키는 쌍), 회색은 단방향이다. 이웃끼리의 연결선까지 그려서 별 모양이 아니라
+실제 구조가 보이게 했다.*
+
 전수 시 약 **10억 엣지**가 예상된다. 별도 엣지 테이블은 sha1 40자 × 2 × 10억 = 80GB로
 과해서 배열 + GIN 인덱스로 뒀다. TOAST 압축이 먹고 역링크 질의도 된다.
 
 ```sql
 SELECT title FROM documents WHERE outlinks @> ARRAY['김연아'];
 ```
+
+### 그래프 화면
+
+http://localhost:8000/graph
+
+문서 제목을 넣으면 이웃 관계를 그린다. 노드를 끌어서 옮길 수 있다.
+외부 라이브러리 없이 Canvas에 힘 기반 레이아웃을 직접 구현했다.
 
 ### 그래프 API
 

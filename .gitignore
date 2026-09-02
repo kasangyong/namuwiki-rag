@@ -16,6 +16,9 @@ __pycache__/
 # 패치 작업 중 생긴 백업
 *.bak
 
+# 브라우저 자동화 임시 산출물
+.playwright-mcp/
+
 # 에디터·OS
 .vscode/
 .idea/

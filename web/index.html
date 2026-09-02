@@ -122,6 +122,11 @@ $('#f').addEventListener('submit', async e => {
     }
     $('#out').innerHTML = d.hits.map(h => {
       const path = h.heading_path.length ? ' › ' + h.heading_path.map(esc).join(' › ') : '';
+      // 청크 텍스트 맨 앞의 "제목 > 헤딩 > 헤딩" 접두는 임베딩에 문맥을 주려고
+      // 붙인 것이다(설계 §5.1). 화면에는 제목 줄에 이미 나오므로 지운다.
+      const prefix = [h.title, ...h.heading_path].join(' > ');
+      let bodyText = h.text;
+      if (bodyText.startsWith(prefix)) bodyText = bodyText.slice(prefix.length).replace(/^\s+/, '');
       const stamp = [
         h.last_modified ? '문서 수정: ' + h.last_modified.slice(0,10) : null,
         h.fetched_at ? '수집: ' + h.fetched_at.slice(0,10) : null
@@ -132,7 +137,7 @@ $('#f').addEventListener('submit', async e => {
           <span class="path">${path}</span>
           <span class="score">${h.score.toFixed(3)}</span>
         </div>
-        <div class="body">${esc(h.text)}</div>
+        <div class="body">${esc(bodyText)}</div>
         ${stamp ? `<div class="stamp">${stamp}</div>` : ''}
       </article>`;
     }).join('');

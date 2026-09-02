@@ -38,6 +38,11 @@ log = logging.getLogger("api")
 
 app = FastAPI(title="나무위키 RAG 검색", version="0.1")
 
+# 페이지 UI에서 나온 링크들. 대상 자체는 실제 문서지만, 링크를 거는 쪽이
+# 주제상 무관해서(과학고등학교·중졸·아인슈타인 등) 그래프 시각화에서는
+# 노이즈다. 저장된 데이터는 그대로 두고 표시할 때만 감춘다 (설계 §13.1.1).
+CHROME_TITLES = ["편집 요청", "크리에이티브 커먼즈 라이선스"]
+
 LICENSE_NOTE = (
     "출처: 나무위키 · CC BY-NC-SA 2.0 KR. "
     "이 검색 결과는 비영리 연구 목적으로만 제공됩니다."
@@ -272,6 +277,90 @@ def graph(title: str, limit: int = 20):
         "outlinks": [r["t"] for r in outs],
         "backlinks": [{"title": r["title"], "outdegree": r["outdeg"]} for r in backs],
     }
+
+
+@app.get("/api/graph/viz")
+def graph_viz(title: str, limit: int = 24):
+    """시각화용 부분 그래프.
+
+    중심 문서와 그 이웃, 그리고 **이웃끼리의 엣지**까지 준다. 이웃 간 연결을
+    빼면 별 모양만 나와서 구조가 보이지 않는다.
+
+    이웃은 PageRank 순으로 고른다. 문서당 링크가 수백 개라 전부 그리면
+    헤어볼이 된다.
+    """
+    with connect() as conn:
+        center = conn.execute(
+            """SELECT title, pagerank, categories, outlinks,
+                      coalesce(array_length(outlinks,1),0) AS outdeg
+                 FROM documents WHERE title = %s""",
+            (title,),
+        ).fetchone()
+        if not center:
+            return {"error": f"수집되지 않은 문서: {title}"}
+
+        # 중심 문서의 outlinks를 파라미터로 넘긴다. 서브쿼리로 배열을 꺼내
+        # ANY에 바로 넣으면 '행 하나에 담긴 배열'이라 타입이 맞지 않는다.
+        out = center["outlinks"] or []
+
+        # 실제 문서로 존재하는 이웃만. 양방향(상호 링크)을 표시한다.
+        #
+        # CHROME_TITLES 는 화면에서만 뺀다. 페이지 UI에서 나온 링크라 주제와
+        # 무관한데 인링크가 많아 PageRank 상위에 오른다(설계 §13.1.1).
+        # 그래프에서는 시각적으로 특히 방해되지만, 저장된 데이터는 건드리지
+        # 않는다 — 판별 기준이 정해지기 전까지는 표시 계층에서만 감춘다.
+        neighbors = conn.execute(
+            """
+            SELECT d.title,
+                   d.pagerank,
+                   (d.title = ANY(%s))               AS linked_from_center,
+                   (d.outlinks @> ARRAY[%s]::text[]) AS links_to_center
+              FROM documents d
+             WHERE d.title <> %s
+               AND d.title <> ALL(%s)
+               AND (d.title = ANY(%s) OR d.outlinks @> ARRAY[%s]::text[])
+             ORDER BY d.pagerank DESC NULLS LAST
+             LIMIT %s
+            """,
+            (out, title, title, CHROME_TITLES, out, title, limit),
+        ).fetchall()
+        names = [r["title"] for r in neighbors]
+
+        # 이웃끼리의 엣지
+        inner: list[dict] = []
+        if len(names) > 1:
+            for r in conn.execute(
+                """SELECT d.title AS src, t AS dst
+                     FROM documents d, unnest(d.outlinks) AS t
+                    WHERE d.title = ANY(%s) AND t = ANY(%s) AND d.title <> t""",
+                (names, names),
+            ).fetchall():
+                inner.append({"source": r["src"], "target": r["dst"]})
+
+    nodes = [{
+        "id": center["title"], "center": True,
+        "pagerank": center["pagerank"] or 0,
+        "outdeg": center["outdeg"],
+        "categories": center["categories"][:3],
+    }]
+    edges = []
+    for r in neighbors:
+        nodes.append({
+            "id": r["title"], "center": False,
+            "pagerank": r["pagerank"] or 0,
+            "mutual": bool(r["linked_from_center"] and r["links_to_center"]),
+        })
+        if r["linked_from_center"]:
+            edges.append({"source": center["title"], "target": r["title"]})
+        if r["links_to_center"]:
+            edges.append({"source": r["title"], "target": center["title"]})
+    edges.extend(inner)
+    return {"center": center["title"], "nodes": nodes, "edges": edges}
+
+
+@app.get("/graph", response_class=HTMLResponse)
+def graph_page() -> str:
+    return (ROOT / "web" / "graph.html").read_text(encoding="utf-8")
 
 
 @app.get("/api/stats")

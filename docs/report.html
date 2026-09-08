@@ -554,13 +554,13 @@
   <h2><span class="n">08</span> 현황</h2>
   <h3 class="col">지금 상태</h3>
   <div class="band" style="margin-top:0">
-    <div class="metric"><span>수집 문서</span><b>5,246</b><i>파싱 5,069건</i></div>
-    <div class="metric"><span>그래프 엣지</span><b>1,921,207</b><i>문서당 379개</i></div>
-    <div class="metric"><span>색인 청크</span><b>149,900</b><i>임베딩 완료</i></div>
-    <div class="metric"><span>프런티어</span><b>371,706</b><i>BFS 발견 대기</i></div>
+    <div class="metric"><span>수집 문서</span><b>51,351</b><i>10배 확장</i></div>
+    <div class="metric"><span>그래프 엣지</span><b>17,230,510</b><i>문서당 336개</i></div>
+    <div class="metric"><span>청크</span><b>1,081,931</b><i>색인 147,602</i></div>
+    <div class="metric"><span>프런티어</span><b>839,877</b><i>BFS 발견 대기</i></div>
   </div>
   <p class="caption">
-    시드 30개에서 출발해 링크 BFS로 확장한 결과. 프런티어가 수집 문서의 <strong>71배</strong>로
+    시드 30개에서 출발해 링크 BFS로 확장한 결과. 프런티어가 수집 문서의 <strong>16배</strong>로
     불어난 것이 BFS가 작동한다는 증거다 — 전수 수집으로 가는 경로가 열려 있다.
   </p>
 
@@ -570,11 +570,11 @@
       <tbody>
         <tr><td class="t">인프라</td><td><span class="pill p-done">작동</span></td><td>Kafka(KRaft) · Postgres 17 · Qdrant 1.19 — 3개 healthy</td></tr>
         <tr><td class="t">수집</td><td><span class="pill p-done">작동</span></td><td>실측 4.9문서/s · 서킷 브레이커 · robots 준수</td></tr>
-        <tr><td class="t">파싱·청킹</td><td><span class="pill p-done">작동</span></td><td>5,069건 파싱 · 청크 중복 0 · 고아 0 · 청크없는문서 0</td></tr>
-        <tr><td class="t">지식그래프 KG-1</td><td><span class="pill p-done">작동</span></td><td>엣지 192만 · 리다이렉트 255개 접기 · PageRank 상위가 국가·도시로 수렴</td></tr>
+        <tr><td class="t">파싱·청킹</td><td><span class="pill p-done">작동</span></td><td>51,351건 파싱 · 청크 중복 0 · 고아 0 · 청크없는문서 0</td></tr>
+        <tr><td class="t">지식그래프 KG-1</td><td><span class="pill p-done">작동</span></td><td>엣지 <strong>1,723만</strong> · 리다이렉트 4,282개 접기 · 인링크 기반 프런티어 정렬</td></tr>
         <tr><td class="t">검색 API</td><td><span class="pill p-done">작동</span></td><td>하이브리드 + 리랭킹 + 그래프 확장 + PageRank 동점 보정</td></tr>
         <tr><td class="t">수율 카나리아</td><td><span class="pill p-done">작동</span></td><td>기준선 5/5 확립 · 경보 0</td></tr>
-        <tr><td class="t">임베딩</td><td><span class="pill p-done">완료</span></td><td>149,900청크 · 12~17청크/s · DB↔Qdrant 정확히 일치</td></tr>
+        <tr><td class="t">임베딩</td><td><span class="pill p-part">진행 중</span></td><td>147,602 / 1,081,931 청크 · 12~17청크/s · GPU 여유 생기면 자동 재개</td></tr>
         <tr><td class="t">검색 품질</td><td><span class="pill p-done">검증</span></td><td>파이썬 0.998 · 부산 0.998 · 김연아 0.998 · 축구 0.965</td></tr>
         <tr><td class="t">전수 수집</td><td><span class="pill p-todo">미착수</span></td><td>70시간 연속 가동 필요 — 사용자 결정 사항</td></tr>
       </tbody>

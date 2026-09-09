@@ -183,6 +183,7 @@ class Batcher:
         self.pending: list[dict] = []
         self.to_delete: list[str] = []
         self.embedded = 0
+        self.skipped = 0
 
     def add(self, msg: dict) -> None:
         if msg.get("deleted"):
@@ -199,6 +200,26 @@ class Batcher:
             )
             log.info("삭제 %d포인트", len(self.to_delete))
             self.to_delete.clear()
+
+        if self.pending:
+            # 크래시로 오프셋 커밋이 유실되면 이미 임베딩한 구간을 다시 받는다.
+            # 이 단계의 비용은 사실상 GPU 시간뿐이라, 내용이 그대로인 청크는
+            # 인코딩 전에 버린다. 파서가 content_hash 가 바뀌면 embedded_at 을
+            # NULL 로 되돌리므로, 해시까지 맞춰 보면 갱신분을 건너뛸 일은 없다.
+            want = {m["chunk_id"]: m.get("content_hash") for m in self.pending}
+            done = {
+                r["chunk_id"]
+                for r in conn.execute(
+                    """SELECT chunk_id, content_hash FROM chunks
+                         WHERE chunk_id = ANY(%s) AND embedded_at IS NOT NULL""",
+                    (list(want),),
+                ).fetchall()
+                if want[r["chunk_id"]] == r["content_hash"]
+            }
+            if done:
+                self.skipped += len(done)
+                self.pending = [m for m in self.pending
+                                if m["chunk_id"] not in done]
 
         if not self.pending:
             return 0
@@ -251,8 +272,8 @@ class Batcher:
         n = len(points)
         self.embedded += n
         log.info(
-            "임베딩 %d청크 | GPU %.1fs (%.1f청크/s) | 누적 %d",
-            n, gpu_s, n / max(gpu_s, 1e-6), self.embedded,
+            "임베딩 %d청크 | GPU %.1fs (%.1f청크/s) | 누적 %d | 스킵 %d",
+            n, gpu_s, n / max(gpu_s, 1e-6), self.embedded, self.skipped,
         )
         self.pending.clear()
         return n

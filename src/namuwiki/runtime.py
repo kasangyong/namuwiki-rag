@@ -50,13 +50,22 @@ class PollLoop:
         self.idle_exit_s = idle_exit_s
         self.assign_timeout_s = assign_timeout_s
         self.timeout_ms = timeout_ms
+        self._buffered: list = []
 
     def _await_assignment(self) -> bool:
         deadline = time.monotonic() + self.assign_timeout_s
         while time.monotonic() < deadline:
             if self.consumer.assignment():
                 return True
-            self.consumer.poll(timeout_ms=500)
+            # 이 폴은 그냥 기다리는 게 아니라 실제로 레코드를 가져온다.
+            # 버리면 그 메시지는 영영 사라진다 — 커밋은 뒤이어 진행되므로
+            # 재전달도 없다. 실제로 재발행한 청크가 시작할 때마다 조용히
+            # 먹혔다. 받아둔 건 첫 배치로 넘긴다.
+            batch = self.consumer.poll(timeout_ms=500)
+            if batch:
+                self._buffered.extend(
+                    rec for recs in batch.values() for rec in recs
+                )
         log = logging.getLogger(__name__)
         log.warning("파티션 할당을 %.0f초 안에 못 받았다.", self.assign_timeout_s)
         return False
@@ -64,6 +73,9 @@ class PollLoop:
     def batches(self):
         """(레코드 리스트)를 순차로 내준다. --once 면 큐가 마르면 멈춘다."""
         self._await_assignment()
+        if self._buffered:
+            yield self._buffered
+            self._buffered = []
         idle_since: float | None = None
         while True:
             batch = self.consumer.poll(timeout_ms=self.timeout_ms)

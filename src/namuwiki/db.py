@@ -91,6 +91,28 @@ CREATE TABLE IF NOT EXISTS canary (
   status         TEXT NOT NULL DEFAULT 'ok'
 );
 
+-- 타입 있는 관계 (KG-2). outlinks 가 "연결됐다"만 말하는 데 비해
+-- 여기에는 "어떻게 연결됐는가"가 들어간다. 전부 규칙으로 뽑는다 —
+-- 인포박스 표, 제목의 A/B 패턴, 분류. LLM 은 쓰지 않는다.
+-- 산문에서 뽑으면 비싸고 정밀도가 낮다는 것이 앞선 실험의 결론이다.
+CREATE TABLE IF NOT EXISTS relations (
+  subject    TEXT NOT NULL,        -- 문서 제목 (정규화됨)
+  predicate  TEXT NOT NULL,        -- 국적, 소속, PART_OF, INSTANCE_OF …
+  object     TEXT NOT NULL,        -- 문서 제목이거나 리터럴
+  obj_kind   TEXT NOT NULL,        -- 'page' | 'literal'
+  -- 근거. 어느 문서의 어디에서 뽑았는지 남긴다. 이게 없으면 틀린 관계를
+  -- 나중에 추적할 수 없다.
+  source     TEXT NOT NULL,        -- 'infobox' | 'title' | 'category' | 'redirect'
+  evidence   TEXT,                 -- 원문 조각
+  PRIMARY KEY (subject, predicate, object, source)
+);
+CREATE INDEX IF NOT EXISTS relations_object_idx    ON relations (object);
+CREATE INDEX IF NOT EXISTS relations_predicate_idx ON relations (predicate);
+
+-- 커뮤니티 (KG-3 준비). 링크 구조로 묶인 주제 덩어리.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS community INT;
+CREATE INDEX IF NOT EXISTS documents_community_idx ON documents (community);
+
 -- 파이프라인 관측용 카운터
 CREATE TABLE IF NOT EXISTS pipeline_stats (
   stage      TEXT NOT NULL,

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import html as _html
 import re
+import urllib.parse
 from dataclasses import dataclass, field
 
 __all__ = ["Section", "ExtractedDoc", "extract", "ExtractionError"]
@@ -168,10 +169,21 @@ def _strip_to_text(fragment: str) -> str:
 
 
 def _extract_categories(html_doc: str) -> list[str]:
-    """분류 이름공간 링크를 메타데이터로 회수한다 (검색 필터용, 설계 §5.2)."""
+    """분류 이름공간 링크를 메타데이터로 회수한다 (검색 필터용, 설계 §5.2).
+
+    이름은 **href 에서** 가져온다. 링크 텍스트를 쓰면 안 된다 — 나무위키는
+    문서 제목과 겹치는 접두어를 화면에서 생략해서, '분류:경기도 출신 인물'
+    이 그냥 '출신 인물'로 렌더링된다. 그 결과 경기도 문서에 '출신 인물'
+    이라는 분류가 붙어, 타입 분류기가 경기도를 인물로 판정했다.
+    href 는 접두어가 살아 있는 정식 이름이다.
+    """
     seen: dict[str, None] = {}
     for m in _CATEGORY_LINK.finditer(html_doc):
-        name = _html.unescape(_TAG.sub("", m.group(2))).strip()
+        name = urllib.parse.unquote(m.group(1)).strip()
+        # href 가 이미 '분류:' 를 뗀 형태로 잡히지만, 인코딩 변형 때문에
+        # 남는 경우가 있어 한 번 더 벗긴다.
+        if name.startswith("분류:"):
+            name = name[3:].strip()
         if name and name not in seen:
             seen[name] = None
     return list(seen)

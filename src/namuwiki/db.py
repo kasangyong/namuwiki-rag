@@ -109,6 +109,11 @@ CREATE TABLE IF NOT EXISTS relations (
 CREATE INDEX IF NOT EXISTS relations_object_idx    ON relations (object);
 CREATE INDEX IF NOT EXISTS relations_predicate_idx ON relations (predicate);
 
+-- 온톨로지 클래스 (KG-2). 인물·장소·조직·작품·사건·생물·개념 일곱 개로
+-- 닫는다. 늘리면 경계가 흐려져 분류 정밀도가 떨어진다.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS entity_type TEXT;
+CREATE INDEX IF NOT EXISTS documents_entity_type_idx ON documents (entity_type);
+
 -- 커뮤니티 (KG-3 준비). 링크 구조로 묶인 주제 덩어리.
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS community INT;
 CREATE INDEX IF NOT EXISTS documents_community_idx ON documents (community);

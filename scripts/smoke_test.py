@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from qdrant_client import QdrantClient  # noqa: E402
 
 from namuwiki.config import SETTINGS  # noqa: E402
+from namuwiki.config import CHROME_TITLES
 from namuwiki.db import connect  # noqa: E402
 
 PASS, FAIL, WARN = "PASS", "FAIL", "WARN"
@@ -69,6 +70,22 @@ def main() -> int:
                 WHERE d.char_len > 0
                   AND NOT EXISTS (SELECT 1 FROM chunks ch WHERE ch.doc_id = d.doc_id)"""
         ).fetchone()["c"]
+        rel = {r["source"]: r["n"] for r in conn.execute(
+            "SELECT source, count(*) n FROM relations GROUP BY source").fetchall()}
+        rel_linked = conn.execute(
+            "SELECT count(*) n FROM relations "
+            "WHERE source='infobox' AND obj_kind='page'").fetchone()["n"]
+        pr_chrome = conn.execute(
+            """SELECT count(*) n FROM documents
+                WHERE title = ANY(%s) AND pagerank IS NOT NULL""",
+            (list(CHROME_TITLES),),
+        ).fetchone()["n"]
+        comm = conn.execute(
+            "SELECT count(DISTINCT community) n FROM documents "
+            "WHERE community IS NOT NULL").fetchone()["n"]
+        in_comm = conn.execute(
+            "SELECT count(*) n FROM documents WHERE community IS NOT NULL"
+        ).fetchone()["n"]
 
     check("수집", fetched > 0, f"{fetched}/{frontier} 문서 수집됨")
     check("파싱", docs > 0, f"documents {docs}건")
@@ -76,6 +93,20 @@ def main() -> int:
     check("지식그래프 엣지", edges > 0,
           f"{edges:,}개 (문서당 {edges / max(docs, 1):.0f})")
     check("분류 온톨로지", cats > 0, f"분류를 가진 문서 {cats}건")
+
+    # --- KG-2: 타입 있는 관계 ---
+    infobox = rel.get("infobox", 0)
+    check("인포박스 관계", infobox > 0,
+          f"{infobox:,}건 · 제목 {rel.get('title',0):,} · 분류 {rel.get('category',0):,}")
+    # 인포박스 값이 문서로 연결되지 않으면 그래프 엣지가 되지 못한다.
+    # 실측 90%. 크게 떨어지면 추출 규칙이 깨진 것이다.
+    ratio = rel_linked / infobox if infobox else 0
+    check("관계가 문서로 연결됨", ratio >= 0.7,
+          f"{rel_linked:,}/{infobox:,} ({ratio*100:.0f}%)")
+    check("PageRank 크롬 링크 제외", pr_chrome == 0,
+          f"UI 링크에 점수가 남으면 순위 보정이 망가진다 ({pr_chrome}건)")
+    check("커뮤니티 탐지", comm > 0,
+          f"{comm}개 커뮤니티 · 문서 {in_comm:,}건 배정", warn_only=True)
     check("청크 중복 없음", dup == 0, f"중복 (doc_id, seq) {dup}건")
     check("고아 청크 없음", orphan == 0, f"문서 없는 청크 {orphan}건")
     check("청크 없는 문서 없음", chunkless == 0, f"본문은 있는데 청크가 없는 문서 {chunkless}건")

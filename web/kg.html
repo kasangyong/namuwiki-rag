@@ -75,6 +75,7 @@
       <button role="tab" data-tab="entity" aria-selected="true">엔티티</button>
       <button role="tab" data-tab="path" aria-selected="false">경로 찾기</button>
       <button role="tab" data-tab="community" aria-selected="false">커뮤니티</button>
+      <button role="tab" data-tab="types" aria-selected="false">타입</button>
     </div>
   </div>
 </header>
@@ -99,6 +100,10 @@
 
   <section id="tab-community" class="hide">
     <div id="out-community" class="muted">불러오는 중…</div>
+  </section>
+
+  <section id="tab-types" class="hide">
+    <div id="out-types" class="muted">불러오는 중…</div>
   </section>
 </main>
 
@@ -125,9 +130,10 @@ document.addEventListener('click', e => {
 document.querySelectorAll('[role=tab]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[role=tab]').forEach(x =>
     x.setAttribute('aria-selected', String(x === b)));
-  for (const name of ['entity', 'path', 'community'])
+  for (const name of ['entity', 'path', 'community', 'types'])
     $('#tab-' + name).classList.toggle('hide', name !== b.dataset.tab);
   if (b.dataset.tab === 'community' && !communityLoaded) loadCommunities();
+  if (b.dataset.tab === 'types' && !typesLoaded) loadTypes();
 }));
 
 function openEntity(title) {
@@ -154,6 +160,7 @@ async function loadEntity(title) {
     '</div>').join('');
 
   let h = '<div class="card"><h2>' + esc(d.title) + '</h2><div class="sub">' +
+    (d.entity_type ? '<b>' + esc(d.entity_type) + '</b> · ' : '') +
     'PageRank ' + (d.pagerank == null ? '—' : d.pagerank.toExponential(2)) +
     ' · 나가는 링크 ' + d.outdegree.toLocaleString() + '개' +
     ' · 본문 ' + (d.char_len || 0).toLocaleString() + '자' +
@@ -216,6 +223,23 @@ async function loadCommunities() {
     d.communities.map(c => '<tr><td>#' + c.id + '</td>' +
       '<td class="n">' + c.size.toLocaleString() + '</td><td>' +
       c.top.map(t => link(t)).join(', ') + '</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+
+let typesLoaded = false;
+async function loadTypes() {
+  typesLoaded = true;
+  const d = await (await fetch('/api/types')).json();
+  const total = d.types.reduce((a, t) => a + t.count, 0);
+  $('#out-types').innerHTML = '<div class="card"><h2>온톨로지 클래스</h2>' +
+    '<div class="sub">클래스는 일곱 개로 닫았다. 늘리면 경계가 흐려져 어느 쪽에도 ' +
+    '넣기 애매한 문서가 늘고 정밀도가 떨어진다. 인포박스 술어(강함)와 분류 이름으로 판정한다.</div>' +
+    '<table><thead><tr><th>클래스</th><th class="n">문서</th><th class="n">비율</th>' +
+    '<th>대표 문서</th></tr></thead><tbody>' +
+    d.types.map(t => '<tr><td><b>' + esc(t.name) + '</b></td>' +
+      '<td class="n">' + t.count.toLocaleString() + '</td>' +
+      '<td class="n">' + (t.count / total * 100).toFixed(1) + '%</td><td>' +
+      t.top.map(x => link(x)).join(', ') + '</td></tr>').join('') +
     '</tbody></table></div>';
 }
 

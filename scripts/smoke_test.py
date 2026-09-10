@@ -80,6 +80,18 @@ def main() -> int:
                 WHERE title = ANY(%s) AND pagerank IS NOT NULL""",
             (list(CHROME_TITLES),),
         ).fetchone()["n"]
+        typed = conn.execute(
+            "SELECT count(*) n FROM documents WHERE entity_type IS NOT NULL"
+        ).fetchone()["n"]
+        # 표본 검사. 이 문서들의 타입이 흔들리면 규칙이 퇴행한 것이다.
+        TYPE_SPOT = {"김연아": "인물", "대한민국": "장소", "6.25 전쟁": "사건",
+                     "문화방송": "조직", "호랑이": "생물"}
+        spot = conn.execute(
+            "SELECT title, entity_type FROM documents WHERE title = ANY(%s)",
+            (list(TYPE_SPOT),),
+        ).fetchall()
+        spot_bad = [f"{r['title']}={r['entity_type']}" for r in spot
+                    if r["entity_type"] != TYPE_SPOT[r["title"]]]
         comm = conn.execute(
             "SELECT count(DISTINCT community) n FROM documents "
             "WHERE community IS NOT NULL").fetchone()["n"]
@@ -105,6 +117,9 @@ def main() -> int:
           f"{rel_linked:,}/{infobox:,} ({ratio*100:.0f}%)")
     check("PageRank 크롬 링크 제외", pr_chrome == 0,
           f"UI 링크에 점수가 남으면 순위 보정이 망가진다 ({pr_chrome}건)")
+    check("엔티티 타입", typed > 0, f"{typed:,}건 분류됨")
+    check("타입 표본 검사", not spot_bad,
+          "규칙 퇴행 없음" if not spot_bad else "틀림: " + ", ".join(spot_bad))
     check("커뮤니티 탐지", comm > 0,
           f"{comm}개 커뮤니티 · 문서 {in_comm:,}건 배정", warn_only=True)
     check("청크 중복 없음", dup == 0, f"중복 (doc_id, seq) {dup}건")

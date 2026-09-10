@@ -210,6 +210,7 @@ def search(
     k: int = Query(8, ge=1, le=50),
     candidates: int = Query(100, ge=10, le=500),
     category: str | None = None,
+    entity_type: str | None = Query(None, description="인물·장소·조직·작품·사건·생물·개념"),
     expand: bool = Query(False, description="그래프 이웃까지 확장 검색"),
 ):
     import time
@@ -217,6 +218,18 @@ def search(
     t0 = time.time()
     hits = hybrid_search(q, candidates=candidates, top_k=k, category=category,
                          expand=expand)
+    if entity_type:
+        # 타입은 Qdrant 페이로드에 없다. 색인을 다시 만들지 않고 결과에서
+        # 거른다 — 후보를 넉넉히 뽑으므로 상위 k개는 대개 남는다.
+        with connect() as conn:
+            rows = conn.execute(
+                "SELECT title FROM documents WHERE title = ANY(%s) AND entity_type = %s",
+                ([h.title for h in hits], entity_type),
+            ).fetchall()
+        keep = {r["title"] for r in rows}
+        hits = [h for h in hits if h.title in keep]
+        for i, h in enumerate(hits, 1):
+            h.rank = i
     facts = facts_for([h.title for h in hits]) if hits else []
     return SearchResponse(
         query=q, hits=hits, facts=facts, took_ms=int((time.time() - t0) * 1000)
@@ -324,7 +337,7 @@ def entity(title: str, limit: int = 40):
     with connect() as conn:
         doc = conn.execute(
             """SELECT title, categories, pagerank, community, char_len,
-                      last_modified,
+                      last_modified, entity_type,
                       coalesce(array_length(outlinks,1),0) AS outdeg
                  FROM documents WHERE title = %s""",
             (title,),
@@ -359,6 +372,7 @@ def entity(title: str, limit: int = 40):
 
     return {
         "title": doc["title"],
+        "entity_type": doc["entity_type"],
         "pagerank": doc["pagerank"],
         "community": doc["community"],
         "community_peers": [r["title"] for r in peers],
@@ -574,6 +588,19 @@ def communities(limit: int = 30):
             {"id": r["community"], "size": r["n"], "top": r["top"]} for r in rows
         ],
     }
+
+
+@app.get("/api/types")
+def types():
+    """온톨로지 클래스별 문서 수와 대표 문서."""
+    with connect() as conn:
+        rows = conn.execute(
+            """SELECT entity_type AS t, count(*) n,
+                      (array_agg(title ORDER BY pagerank DESC NULLS LAST))[1:8] AS top
+                 FROM documents WHERE entity_type IS NOT NULL
+                GROUP BY entity_type ORDER BY n DESC"""
+        ).fetchall()
+    return {"types": [{"name": r["t"], "count": r["n"], "top": r["top"]} for r in rows]}
 
 
 @app.get("/kg", response_class=HTMLResponse)

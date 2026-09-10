@@ -29,7 +29,7 @@ from fastapi.responses import HTMLResponse  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 from qdrant_client import QdrantClient, models  # noqa: E402
 
-from namuwiki.config import SETTINGS  # noqa: E402
+from namuwiki.config import CHROME_TITLES as SETTINGS_CHROME, SETTINGS  # noqa: E402
 from namuwiki.db import connect  # noqa: E402
 from namuwiki.models import DenseEncoder, Reranker, SparseEncoder  # noqa: E402
 
@@ -41,7 +41,7 @@ app = FastAPI(title="나무위키 RAG 검색", version="0.1")
 # 페이지 UI에서 나온 링크들. 대상 자체는 실제 문서지만, 링크를 거는 쪽이
 # 주제상 무관해서(과학고등학교·중졸·아인슈타인 등) 그래프 시각화에서는
 # 노이즈다. 저장된 데이터는 그대로 두고 표시할 때만 감춘다 (설계 §13.1.1).
-CHROME_TITLES = ["편집 요청", "크리에이티브 커먼즈 라이선스"]
+CHROME_TITLES = list(SETTINGS_CHROME)
 
 LICENSE_NOTE = (
     "출처: 나무위키 · CC BY-NC-SA 2.0 KR. "
@@ -62,9 +62,19 @@ class Hit(BaseModel):
     fetched_at: str | None = None
 
 
+class Fact(BaseModel):
+    subject: str
+    predicate: str
+    object: str
+
+
 class SearchResponse(BaseModel):
     query: str
     hits: list[Hit]
+    # 결과 문서들에 대해 그래프가 아는 사실. 본문 조각은 "무엇이라 쓰여
+    # 있는가"를 주지만 이건 "무엇인가"를 준다 — 답을 구성할 때 본문보다
+    # 짧고 정확하다.
+    facts: list[Fact] = []
     license: str = LICENSE_NOTE
     took_ms: int
 
@@ -206,9 +216,32 @@ def search(
     t0 = time.time()
     hits = hybrid_search(q, candidates=candidates, top_k=k, category=category,
                          expand=expand)
+    facts = facts_for([h.title for h in hits]) if hits else []
     return SearchResponse(
-        query=q, hits=hits, took_ms=int((time.time() - t0) * 1000)
+        query=q, hits=hits, facts=facts, took_ms=int((time.time() - t0) * 1000)
     )
+
+
+def facts_for(titles: list[str], limit: int = 24) -> list[Fact]:
+    """검색 결과 문서들에 걸린 인포박스 사실을 모은다.
+
+    분류(INSTANCE_OF)는 뺀다 — 문서당 수십 개라 실제 사실을 덮어버린다.
+    """
+    if not titles:
+        return []
+    seen = list(dict.fromkeys(titles))
+    with connect() as conn:
+        rows = conn.execute(
+            """SELECT r.subject, r.predicate, r.object
+                 FROM relations r
+                 LEFT JOIN documents d ON d.title = r.subject
+                WHERE r.subject = ANY(%s) AND r.source = 'infobox'
+                ORDER BY d.pagerank DESC NULLS LAST, r.predicate
+                LIMIT %s""",
+            (seen, limit),
+        ).fetchall()
+    return [Fact(subject=r["subject"], predicate=r["predicate"],
+                 object=r["object"]) for r in rows]
 
 
 def neighbor_doc_ids(doc_ids: list[str], limit: int = 40) -> list[str]:
@@ -279,6 +312,132 @@ def graph(title: str, limit: int = 20):
     }
 
 
+@app.get("/api/entity")
+def entity(title: str, limit: int = 40):
+    """엔티티 카드 — 그 문서에 대해 아는 모든 것.
+
+    outlinks 가 "연결됐다"만 말하는 데 비해 relations 는 "어떻게 연결됐는가"를
+    말한다. 나가는 관계(김연아 --국적--> 대한민국)와 들어오는 관계
+    (누가 김연아를 무엇으로 가리키는가)를 함께 준다.
+    """
+    with connect() as conn:
+        doc = conn.execute(
+            """SELECT title, categories, pagerank, community, char_len,
+                      last_modified,
+                      coalesce(array_length(outlinks,1),0) AS outdeg
+                 FROM documents WHERE title = %s""",
+            (title,),
+        ).fetchone()
+        if not doc:
+            return {"error": f"수집되지 않은 문서: {title}"}
+
+        out = conn.execute(
+            """SELECT predicate, object, obj_kind, source, evidence
+                 FROM relations WHERE subject = %s
+                -- 인포박스가 가장 값어치 있다. 분류는 수가 많아 그냥 두면
+                -- 국적·소속 같은 사실을 화면 밖으로 밀어낸다.
+                ORDER BY CASE source WHEN 'infobox' THEN 0 WHEN 'title' THEN 1
+                                     WHEN 'redirect' THEN 2 ELSE 3 END,
+                         predicate, object LIMIT %s""",
+            (title, limit),
+        ).fetchall()
+        inc = conn.execute(
+            """SELECT r.subject, r.predicate, r.source
+                 FROM relations r
+                 LEFT JOIN documents d ON d.title = r.subject
+                WHERE r.object = %s
+                ORDER BY d.pagerank DESC NULLS LAST LIMIT %s""",
+            (title, limit),
+        ).fetchall()
+        peers = conn.execute(
+            """SELECT title FROM documents
+                WHERE community = %s AND title <> %s
+                ORDER BY pagerank DESC NULLS LAST LIMIT 8""",
+            (doc["community"], title),
+        ).fetchall() if doc["community"] is not None else []
+
+    return {
+        "title": doc["title"],
+        "pagerank": doc["pagerank"],
+        "community": doc["community"],
+        "community_peers": [r["title"] for r in peers],
+        "categories": doc["categories"],
+        "outdegree": doc["outdeg"],
+        "char_len": doc["char_len"],
+        "last_modified": doc["last_modified"],
+        "relations_out": [
+            {"predicate": r["predicate"], "object": r["object"],
+             "kind": r["obj_kind"], "source": r["source"],
+             "evidence": r["evidence"]} for r in out
+        ],
+        "relations_in": [
+            {"subject": r["subject"], "predicate": r["predicate"],
+             "source": r["source"]} for r in inc
+        ],
+    }
+
+
+@app.get("/api/graph/path")
+def graph_path(source: str, target: str, max_hops: int = 4):
+    """두 문서를 잇는 최단 경로.
+
+    양쪽에서 동시에 넓히는 양방향 BFS 다. 단방향 BFS 는 홉마다 분기가 수백
+    배로 늘어 3홉이면 이미 수백만 노드가 된다. 양방향이면 각각 절반 깊이만
+    가면 되므로 탐색량이 제곱근으로 줄어든다.
+
+    링크 방향은 무시한다 — "무엇을 거쳐 닿는가"가 질문이지 "어느 쪽이
+    가리키는가"가 아니다.
+    """
+    if source == target:
+        return {"path": [source], "hops": 0}
+
+    def neighbors(conn, titles: list[str]) -> dict[str, list[str]]:
+        """여러 제목의 이웃을 한 번의 질의로 가져온다 (양방향)."""
+        rows = conn.execute(
+            """SELECT title, outlinks FROM documents WHERE title = ANY(%s)""",
+            (titles,),
+        ).fetchall()
+        out: dict[str, list[str]] = {r["title"]: list(r["outlinks"]) for r in rows}
+        back = conn.execute(
+            """SELECT d.title AS src, t AS dst
+                 FROM documents d, unnest(d.outlinks) t
+                WHERE t = ANY(%s)""",
+            (titles,),
+        ).fetchall()
+        for r in back:
+            out.setdefault(r["dst"], []).append(r["src"])
+        return out
+
+    with connect() as conn:
+        for t in (source, target):
+            if not conn.execute("SELECT 1 FROM documents WHERE title = %s",
+                                (t,)).fetchone():
+                return {"error": f"수집되지 않은 문서: {t}"}
+
+        # from_side / to_side: 노드 -> 그 노드까지의 경로
+        fwd = {source: [source]}
+        bwd = {target: [target]}
+        for hop in range(max_hops):
+            # 작은 쪽을 넓힌다. 한쪽이 폭발해도 다른 쪽이 받쳐준다.
+            grow, other = (fwd, bwd) if len(fwd) <= len(bwd) else (bwd, fwd)
+            frontier = [t for t, p in grow.items() if len(p) == hop // 2 + 1] or list(grow)
+            nb = neighbors(conn, frontier[:400])
+            for src, dsts in nb.items():
+                base = grow.get(src)
+                if base is None:
+                    continue
+                for d in dsts:
+                    if d in grow:
+                        continue
+                    grow[d] = base + [d]
+                    if d in other:
+                        a, b = grow[d], other[d]
+                        path = a + b[::-1][1:] if grow is fwd else b + a[::-1][1:]
+                        return {"path": path, "hops": len(path) - 1}
+    return {"error": f"{max_hops}홉 안에서 경로를 찾지 못했다",
+            "source": source, "target": target}
+
+
 @app.get("/api/graph/viz")
 def graph_viz(title: str, limit: int = 24):
     """시각화용 부분 그래프.
@@ -291,7 +450,7 @@ def graph_viz(title: str, limit: int = 24):
     """
     with connect() as conn:
         center = conn.execute(
-            """SELECT title, pagerank, categories, outlinks,
+            """SELECT title, pagerank, categories, outlinks, community,
                       coalesce(array_length(outlinks,1),0) AS outdeg
                  FROM documents WHERE title = %s""",
             (title,),
@@ -313,16 +472,21 @@ def graph_viz(title: str, limit: int = 24):
             """
             SELECT d.title,
                    d.pagerank,
+                   d.community,
                    (d.title = ANY(%s))               AS linked_from_center,
                    (d.outlinks @> ARRAY[%s]::text[]) AS links_to_center
               FROM documents d
              WHERE d.title <> %s
                AND d.title <> ALL(%s)
                AND (d.title = ANY(%s) OR d.outlinks @> ARRAY[%s]::text[])
-             ORDER BY d.pagerank DESC NULLS LAST
+             -- 같은 커뮤니티를 먼저 고른다. PageRank 만으로 고르면 '손흥민'
+             -- 주위가 연도와 국가로 채워진다 — 링크는 많지만 주제가 아니다.
+             ORDER BY (d.community IS NOT DISTINCT FROM %s) DESC,
+                      d.pagerank DESC NULLS LAST
              LIMIT %s
             """,
-            (out, title, title, CHROME_TITLES, out, title, limit),
+            (out, title, title, CHROME_TITLES, out, title,
+             center["community"], limit),
         ).fetchall()
         names = [r["title"] for r in neighbors]
 
@@ -341,6 +505,7 @@ def graph_viz(title: str, limit: int = 24):
         "id": center["title"], "center": True,
         "pagerank": center["pagerank"] or 0,
         "outdeg": center["outdeg"],
+        "community": center["community"],
         "categories": center["categories"][:3],
     }]
     edges = []
@@ -348,6 +513,7 @@ def graph_viz(title: str, limit: int = 24):
         nodes.append({
             "id": r["title"], "center": False,
             "pagerank": r["pagerank"] or 0,
+            "community": r["community"],
             "mutual": bool(r["linked_from_center"] and r["links_to_center"]),
         })
         if r["linked_from_center"]:
@@ -355,7 +521,25 @@ def graph_viz(title: str, limit: int = 24):
         if r["links_to_center"]:
             edges.append({"source": r["title"], "target": center["title"]})
     edges.extend(inner)
-    return {"center": center["title"], "nodes": nodes, "edges": edges}
+
+    # 화면에 그려진 노드 사이에 타입 있는 관계가 있으면 라벨로 얹는다.
+    # 링크 엣지는 "연결됐다"까지만 말하지만 이건 "국적"이라고 말해준다.
+    shown = [n["id"] for n in nodes]
+    labels: dict[tuple[str, str], str] = {}
+    with connect() as conn:
+        for r in conn.execute(
+            """SELECT subject, predicate, object FROM relations
+                WHERE source = 'infobox' AND obj_kind = 'page'
+                  AND subject = ANY(%s) AND object = ANY(%s)""",
+            (shown, shown),
+        ).fetchall():
+            labels.setdefault((r["subject"], r["object"]), r["predicate"])
+    for e in edges:
+        lab = labels.get((e["source"], e["target"]))
+        if lab:
+            e["label"] = lab
+    return {"center": center["title"], "nodes": nodes, "edges": edges,
+            "relation_labels": len(labels)}
 
 
 @app.get("/graph", response_class=HTMLResponse)

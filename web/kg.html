@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>나무위키 지식그래프 — 관계 탐색</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --panel: #fff; --ink: #1c1b19; --muted: #6b6862;
+    --line: #e5e1da; --accent: #00a495; --accent-ink: #00776c;
+    --chip: #f2efe9; --infobox: #c2551f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #171614; --panel: #1f1e1b; --ink: #eceae6; --muted: #a09c94;
+      --line: #33312d; --accent: #2fd0bf; --accent-ink: #7ee5da;
+      --chip: #26241f; --infobox: #f08a5a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, "Segoe UI", "Malgun Gothic", system-ui, sans-serif; }
+  header { border-bottom: 1px solid var(--line); background: var(--panel); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  .brand { display: flex; align-items: baseline; gap: 10px; padding: 16px 0 12px; }
+  .brand h1 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
+  .brand span { color: var(--muted); font-size: 12.5px; }
+  .brand nav { margin-left: auto; display: flex; gap: 14px; }
+  .brand nav a { color: var(--accent-ink); font-size: 13px; text-decoration: none; }
+  .tabs { display: flex; gap: 6px; padding-bottom: 12px; }
+  .tabs button { background: transparent; border: 1px solid var(--line); color: var(--muted);
+    padding: 6px 14px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--accent); color: #04211e;
+    border-color: transparent; font-weight: 600; }
+  main { padding: 20px 0 60px; }
+  form { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  input[type=search] { flex: 1; min-width: 180px; padding: 10px 12px; font: inherit;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
+  button.go { padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #04211e; border: 0; border-radius: 8px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 4px; font-size: 17px; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 12px; }
+  .facts { display: grid; grid-template-columns: 92px 1fr; gap: 6px 14px; align-items: baseline; }
+  .pred { color: var(--infobox); font-size: 13px; font-weight: 600; text-align: right; }
+  .obj a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }
+  .obj a:hover { border-color: var(--accent); }
+  .lit { color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--chip); border: 0; border-radius: 999px; padding: 4px 11px;
+    font: inherit; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .chip:hover { color: var(--ink); }
+  .path { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .path .node { background: var(--chip); border-radius: 8px; padding: 6px 12px; }
+  .path .arr { color: var(--muted); }
+  .muted { color: var(--muted); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line);
+    vertical-align: baseline; }
+  th { color: var(--muted); font-weight: 500; font-size: 12.5px; }
+  td.n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <h1>지식그래프 탐색</h1>
+      <span>관계 · 경로 · 커뮤니티</span>
+      <nav><a href="/">검색</a><a href="/graph">그래프 그림</a></nav>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="entity" aria-selected="true">엔티티</button>
+      <button role="tab" data-tab="path" aria-selected="false">경로 찾기</button>
+      <button role="tab" data-tab="community" aria-selected="false">커뮤니티</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="tab-entity">
+    <form id="f-entity">
+      <input type="search" id="q-entity" value="손흥민" placeholder="문서 제목 (예: 김연아)">
+      <button class="go" type="submit">조회</button>
+    </form>
+    <div id="out-entity"></div>
+  </section>
+
+  <section id="tab-path" class="hide">
+    <form id="f-path">
+      <input type="search" id="q-src" value="손흥민" placeholder="출발 문서">
+      <input type="search" id="q-dst" value="이순신" placeholder="도착 문서">
+      <button class="go" type="submit">경로</button>
+    </form>
+    <div id="out-path"></div>
+  </section>
+
+  <section id="tab-community" class="hide">
+    <div id="out-community" class="muted">불러오는 중…</div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// 제목은 사용자 데이터라 onclick 문자열에 그대로 넣으면 따옴표에서 깨진다.
+// data 속성에 담고 위임으로 받는다.
+function link(title) {
+  return '<a href="#" data-open="' + esc(title) + '">' + esc(title) + '</a>';
+}
+function chip(label, title) {
+  return '<button class="chip" data-open="' + esc(title) + '">' + esc(label) + '</button>';
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-open]');
+  if (!el) return;
+  e.preventDefault();
+  openEntity(el.dataset.open);
+});
+
+document.querySelectorAll('[role=tab]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[role=tab]').forEach(x =>
+    x.setAttribute('aria-selected', String(x === b)));
+  for (const name of ['entity', 'path', 'community'])
+    $('#tab-' + name).classList.toggle('hide', name !== b.dataset.tab);
+  if (b.dataset.tab === 'community' && !communityLoaded) loadCommunities();
+}));
+
+function openEntity(title) {
+  document.querySelector('[data-tab=entity]').click();
+  $('#q-entity').value = title;
+  loadEntity(title);
+  window.scrollTo(0, 0);
+}
+
+async function loadEntity(title) {
+  const out = $('#out-entity');
+  out.innerHTML = '<p class="muted">불러오는 중…</p>';
+  const d = await (await fetch('/api/entity?limit=80&title=' + encodeURIComponent(title))).json();
+  if (d.error) { out.innerHTML = '<p class="muted">' + esc(d.error) + '</p>'; return; }
+
+  // 출처별로 나눈다. 인포박스가 실제 사실이고 분류는 타입이다.
+  const box = d.relations_out.filter(r => r.source === 'infobox');
+  const cats = d.relations_out.filter(r => r.source === 'category');
+  const rest = d.relations_out.filter(r => r.source !== 'infobox' && r.source !== 'category');
+
+  const rows = rs => rs.map(r =>
+    '<div class="pred">' + esc(r.predicate) + '</div><div class="obj">' +
+    (r.kind === 'page' ? link(r.object) : '<span class="lit">' + esc(r.object) + '</span>') +
+    '</div>').join('');
+
+  let h = '<div class="card"><h2>' + esc(d.title) + '</h2><div class="sub">' +
+    'PageRank ' + (d.pagerank == null ? '—' : d.pagerank.toExponential(2)) +
+    ' · 나가는 링크 ' + d.outdegree.toLocaleString() + '개' +
+    ' · 본문 ' + (d.char_len || 0).toLocaleString() + '자' +
+    ' · 커뮤니티 ' + (d.community == null ? '—' : '#' + d.community) + '</div>';
+  h += box.length
+    ? '<div class="facts">' + rows(box) + '</div>'
+    : '<p class="muted">인포박스가 없는 문서다 — 개념·사건 문서에는 표가 없어서 관계가 나오지 않는다.</p>';
+  h += '</div>';
+
+  if (rest.length) h += '<div class="card"><h2>구조 관계</h2>' +
+    '<div class="sub">제목의 A/B 패턴(PART_OF)과 리다이렉트(SAME_AS)에서 나온다</div>' +
+    '<div class="facts">' + rows(rest) + '</div></div>';
+
+  if (d.community_peers.length) h += '<div class="card"><h2>같은 커뮤니티</h2>' +
+    '<div class="sub">분류가 아니라 링크 밀도로 묶인 문서들</div><div class="chips">' +
+    d.community_peers.map(t => chip(t, t)).join('') + '</div></div>';
+
+  if (d.relations_in.length) h += '<div class="card"><h2>이 문서를 가리키는 관계</h2>' +
+    '<div class="sub">' + d.relations_in.length + '건</div><div class="chips">' +
+    d.relations_in.slice(0, 30).map(r =>
+      chip(r.subject + ' · ' + r.predicate, r.subject)).join('') + '</div></div>';
+
+  if (cats.length) h += '<div class="card"><h2>분류 (INSTANCE_OF)</h2>' +
+    '<div class="sub">' + cats.length + '건</div><div class="chips">' +
+    cats.map(r => '<span class="chip">' + esc(r.object) + '</span>').join('') + '</div></div>';
+
+  out.innerHTML = h;
+}
+
+$('#f-entity').addEventListener('submit', e => {
+  e.preventDefault();
+  loadEntity($('#q-entity').value.trim());
+});
+
+$('#f-path').addEventListener('submit', async e => {
+  e.preventDefault();
+  const out = $('#out-path');
+  out.innerHTML = '<p class="muted">찾는 중…</p>';
+  const u = '/api/graph/path?source=' + encodeURIComponent($('#q-src').value.trim()) +
+            '&target=' + encodeURIComponent($('#q-dst').value.trim());
+  const d = await (await fetch(u)).json();
+  if (d.error) { out.innerHTML = '<p class="muted">' + esc(d.error) + '</p>'; return; }
+  out.innerHTML = '<div class="card"><h2>' + d.hops + '홉</h2>' +
+    '<div class="sub">양쪽에서 동시에 넓히는 양방향 탐색. 링크 방향은 보지 않는다.</div>' +
+    '<div class="path">' + d.path.map((t, i) =>
+      (i ? '<span class="arr">→</span>' : '') + '<span class="node">' + link(t) + '</span>'
+    ).join('') + '</div></div>';
+});
+
+let communityLoaded = false;
+async function loadCommunities() {
+  communityLoaded = true;
+  const out = $('#out-community');
+  const d = await (await fetch('/api/communities')).json();
+  out.innerHTML = '<div class="card"><h2>' + d.count + '개 커뮤니티</h2>' +
+    '<div class="sub">Leiden 으로 링크 밀도에서 찾아낸 주제 덩어리다. ' +
+    '분류와 달리 사람이 붙인 라벨이 아니라서, 분류가 없거나 엉성한 문서도 묶인다.</div>' +
+    '<table><thead><tr><th>번호</th><th class="n">문서</th>' +
+    '<th>대표 문서 (PageRank 상위)</th></tr></thead><tbody>' +
+    d.communities.map(c => '<tr><td>#' + c.id + '</td>' +
+      '<td class="n">' + c.size.toLocaleString() + '</td><td>' +
+      c.top.map(t => link(t)).join(', ') + '</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+
+loadEntity('손흥민');
+</script>
+</body>
+</html>

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import re
 import urllib.parse
 from functools import lru_cache
 from pathlib import Path
@@ -377,8 +378,15 @@ def entity(title: str, limit: int = 40):
     }
 
 
+# 달력 문서. '1월 6일', '1992년', '1990년대' 는 연대순 색인이라 서로 무관한
+# 문서를 전부 이어버린다. 그대로 두면 '손흥민 → 1월 6일 → 이순신' 처럼
+# 어떤 두 문서든 2홉이 되어 경로가 아무것도 말해주지 않는다.
+_CALENDAR = re.compile(r"^(\d{1,4}년(대)?|\d{1,2}월( \d{1,2}일)?|\d{1,2}월 \d{1,2}일)$")
+
+
 @app.get("/api/graph/path")
-def graph_path(source: str, target: str, max_hops: int = 4):
+def graph_path(source: str, target: str, max_hops: int = 4,
+               avoid_calendar: bool = True):
     """두 문서를 잇는 최단 경로.
 
     양쪽에서 동시에 넓히는 양방향 BFS 다. 단방향 BFS 는 홉마다 분기가 수백
@@ -406,6 +414,10 @@ def graph_path(source: str, target: str, max_hops: int = 4):
         ).fetchall()
         for r in back:
             out.setdefault(r["dst"], []).append(r["src"])
+        if avoid_calendar:
+            for k in out:
+                out[k] = [t for t in out[k]
+                          if not _CALENDAR.match(t) and t not in CHROME_TITLES]
         return out
 
     with connect() as conn:
@@ -540,6 +552,33 @@ def graph_viz(title: str, limit: int = 24):
             e["label"] = lab
     return {"center": center["title"], "nodes": nodes, "edges": edges,
             "relation_labels": len(labels)}
+
+
+@app.get("/api/communities")
+def communities(limit: int = 30):
+    """커뮤니티 목록과 각 커뮤니티의 대표 문서."""
+    with connect() as conn:
+        rows = conn.execute(
+            """SELECT community, count(*) n,
+                      (array_agg(title ORDER BY pagerank DESC NULLS LAST))[1:6] AS top
+                 FROM documents WHERE community IS NOT NULL
+                GROUP BY community ORDER BY n DESC LIMIT %s""",
+            (limit,),
+        ).fetchall()
+        total = conn.execute(
+            "SELECT count(DISTINCT community) n FROM documents WHERE community IS NOT NULL"
+        ).fetchone()["n"]
+    return {
+        "count": total,
+        "communities": [
+            {"id": r["community"], "size": r["n"], "top": r["top"]} for r in rows
+        ],
+    }
+
+
+@app.get("/kg", response_class=HTMLResponse)
+def kg_page() -> str:
+    return (ROOT / "web" / "kg.html").read_text(encoding="utf-8")
 
 
 @app.get("/graph", response_class=HTMLResponse)

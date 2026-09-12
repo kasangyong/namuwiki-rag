@@ -236,6 +236,12 @@ def search(
     )
 
 
+# 사람에게만 성립하는 술어. 다른 타입 문서에 달려 있으면 인포박스가
+# 섞여 들어온 것이다.
+PERSON_ONLY_PREDICATES = ["출생", "사망", "학력", "배우자", "부모", "자녀",
+                          "형제", "가족", "직업"]
+
+
 def facts_for(titles: list[str], limit: int = 24) -> list[Fact]:
     """검색 결과 문서들에 걸린 인포박스 사실을 모은다.
 
@@ -250,9 +256,15 @@ def facts_for(titles: list[str], limit: int = 24) -> list[Fact]:
                  FROM relations r
                  LEFT JOIN documents d ON d.title = r.subject
                 WHERE r.subject = ANY(%s) AND r.source = 'infobox'
+                  -- 사람에게만 붙는 술어가 사람 아닌 문서에 달렸다면 추출이
+                  -- 잘못된 것이다. 해전 문서에 지휘관 인포박스가 섞여
+                  -- '부산포 해전 --가족--> 방수진' 같은 사실이 나왔다.
+                  -- 타입 계층은 바로 이걸 걸러내라고 만들었다.
+                  AND NOT (r.predicate = ANY(%s)
+                           AND coalesce(d.entity_type, '') <> '인물')
                 ORDER BY d.pagerank DESC NULLS LAST, r.predicate
                 LIMIT %s""",
-            (seen, limit),
+            (seen, PERSON_ONLY_PREDICATES, limit),
         ).fetchall()
     return [Fact(subject=r["subject"], predicate=r["predicate"],
                  object=r["object"]) for r in rows]

@@ -3,6 +3,8 @@ name: namuwiki-rag
 services:
   kafka:
     image: apache/kafka:3.9.0
+    # 컴퓨터가 꺼져도 부팅 때 함께 올라온다. 손으로 내린 것은 그대로 둔다.
+    restart: unless-stopped
     container_name: nw-kafka
     ports:
       - "29092:29092"
@@ -35,6 +37,8 @@ services:
 
   postgres:
     image: postgres:17-alpine
+    # 컴퓨터가 꺼져도 부팅 때 함께 올라온다. 손으로 내린 것은 그대로 둔다.
+    restart: unless-stopped
     container_name: nw-postgres
     ports:
       - "5433:5432"
@@ -65,6 +69,8 @@ services:
     # 클라이언트(qdrant-client)와 메이저·마이너를 맞춘다. 어긋나면 경고가 뜨고
     # 일부 API가 조용히 다르게 동작할 수 있다.
     image: qdrant/qdrant:v1.19.0
+    # 컴퓨터가 꺼져도 부팅 때 함께 올라온다. 손으로 내린 것은 그대로 둔다.
+    restart: unless-stopped
     container_name: nw-qdrant
     ports:
       - "6333:6333"

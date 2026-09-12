@@ -149,11 +149,21 @@ def main() -> None:
         pr = pagerank(indptr, indices, n, args.damping, args.iters, args.tol)
         print(f"계산 완료 ({time.time() - t0:.1f}s)", flush=True)
 
-        with conn.cursor() as cur:
-            cur.executemany(
-                "UPDATE documents SET pagerank = %s WHERE doc_id = %s",
-                [(float(pr[i]), doc_ids[i]) for i in range(n)],
-            )
+        # 한 행씩 UPDATE 하면 왕복 비용이 지배한다 — 11만 행에 33분이 걸렸고,
+        # 그동안 서버는 ClientRead 로 파이썬을 기다리고만 있었다.
+        # COPY 로 임시 테이블에 쏟아붓고 한 번의 조인으로 갱신한다.
+        # 연결이 autocommit 이라 ON COMMIT DROP 이 의미를 가지려면 트랜잭션이
+        # 열려 있어야 한다. 갱신도 한 번에 커밋되어 중간 상태가 보이지 않는다.
+        t1 = time.time()
+        with conn.transaction(), conn.cursor() as cur:
+            cur.execute("CREATE TEMP TABLE _pr (doc_id TEXT PRIMARY KEY, v REAL) "
+                        "ON COMMIT DROP")
+            with cur.copy("COPY _pr (doc_id, v) FROM STDIN") as cp:
+                for i in range(n):
+                    cp.write_row((doc_ids[i], float(pr[i])))
+            cur.execute("UPDATE documents d SET pagerank = _pr.v "
+                        "FROM _pr WHERE _pr.doc_id = d.doc_id")
+            print(f"{n:,}건 기록 ({time.time() - t1:.1f}s)", flush=True)
         # 크롬 링크는 그래프에서 인링크를 뺐어도 노드로는 남아 기본 점수를
         # 받는다. 주제 노드가 아니므로 점수 자체를 비운다 — 순위 보정과
         # 크롤 우선순위 어느 쪽에도 끼면 안 된다.

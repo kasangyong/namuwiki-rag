@@ -407,7 +407,9 @@ def entity(title: str, limit: int = 40):
 # 달력 문서. '1월 6일', '1992년', '1990년대' 는 연대순 색인이라 서로 무관한
 # 문서를 전부 이어버린다. 그대로 두면 '손흥민 → 1월 6일 → 이순신' 처럼
 # 어떤 두 문서든 2홉이 되어 경로가 아무것도 말해주지 않는다.
-_CALENDAR = re.compile(r"^(\d{1,4}년(대)?|\d{1,2}월( \d{1,2}일)?|\d{1,2}월 \d{1,2}일)$")
+_CALENDAR = re.compile(
+    r"^(\d{1,4}년(대)?|\d{1,2}월( \d{1,2}일)?|[월화수목금토일]요일)$"
+)
 
 
 @app.get("/api/graph/path")
@@ -477,7 +479,8 @@ def graph_path(source: str, target: str, max_hops: int = 4,
 
 
 @app.get("/api/graph/viz")
-def graph_viz(title: str, limit: int = 24):
+def graph_viz(title: str, limit: int = Query(24, ge=4, le=150),
+              hide_calendar: bool = True):
     """시각화용 부분 그래프.
 
     중심 문서와 그 이웃, 그리고 **이웃끼리의 엣지**까지 준다. 이웃 간 연결을
@@ -517,6 +520,10 @@ def graph_viz(title: str, limit: int = 24):
              WHERE d.title <> %s
                AND d.title <> ALL(%s)
                AND (d.title = ANY(%s) OR d.outlinks @> ARRAY[%s]::text[])
+               -- 달력 문서는 방영일·개봉일로 링크될 뿐 주제가 아니다.
+               -- 드라마 한 편을 그리면 화면 절반이 '4월 1일', '2012년',
+               -- '토요일'로 찼다. 기본으로 감추되 끌 수 있게 둔다.
+               AND (NOT %s OR d.title !~ %s)
              -- 같은 커뮤니티를 먼저 고른다. PageRank 만으로 고르면 '손흥민'
              -- 주위가 연도와 국가로 채워진다 — 링크는 많지만 주제가 아니다.
              ORDER BY (d.community IS NOT DISTINCT FROM %s) DESC,
@@ -524,6 +531,7 @@ def graph_viz(title: str, limit: int = 24):
              LIMIT %s
             """,
             (out, title, title, CHROME_TITLES, out, title,
+             hide_calendar, _CALENDAR.pattern,
              center["community"], limit),
         ).fetchall()
         names = [r["title"] for r in neighbors]
